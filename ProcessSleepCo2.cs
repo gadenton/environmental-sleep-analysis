@@ -32,6 +32,9 @@ static string GetDefaultTakeoutDir()
 static string GetDefaultCo2Path() =>
     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "CO2.csv");
 
+static string GetDefaultRoomTempPath() =>
+    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "bedroom_temp.csv");
+
 static string ExpandPath(string path)
 {
     if (string.IsNullOrWhiteSpace(path)) return path;
@@ -59,6 +62,12 @@ var co2Option = new Option<string>("--co2", "-c")
 {
     Description = "Path to Home Assistant CO2.csv",
     DefaultValueFactory = _ => GetDefaultCo2Path()
+};
+
+var roomTempOption = new Option<string>("--bedroom-temp", "-bt")
+{
+    Description = "Path to Home Assistant bedroom_temp.csv",
+    DefaultValueFactory = _ => GetDefaultRoomTempPath()
 };
 
 var spo2DirOption = new Option<string>("--spo2-dir", "-spo2")
@@ -102,6 +111,7 @@ var rootCommand = new RootCommand("Align and analyze Fitbit/Google Health sleep 
     sleepScoreOption,
     sleepJsonDirOption,
     co2Option,
+    roomTempOption,
     spo2DirOption,
     hrvDirOption,
     tempDirOption,
@@ -115,6 +125,7 @@ rootCommand.SetAction(parseResult =>
     string sleepScorePath = ExpandPath(parseResult.GetValue(sleepScoreOption)!);
     string sleepJsonDir = ExpandPath(parseResult.GetValue(sleepJsonDirOption)!);
     string co2Path = ExpandPath(parseResult.GetValue(co2Option)!);
+    string roomTempPath = ExpandPath(parseResult.GetValue(roomTempOption)!);
     string spo2Dir = ExpandPath(parseResult.GetValue(spo2DirOption)!);
     string hrvDir = ExpandPath(parseResult.GetValue(hrvDirOption)!);
     string tempDir = ExpandPath(parseResult.GetValue(tempDirOption)!);
@@ -122,7 +133,7 @@ rootCommand.SetAction(parseResult =>
     double coverageCutoff = parseResult.GetValue(coverageOption);
     string timezoneId = parseResult.GetValue(timezoneOption)!;
 
-    RunPipeline(sleepScorePath, sleepJsonDir, co2Path, spo2Dir, hrvDir, tempDir, outputPath, coverageCutoff, timezoneId);
+    RunPipeline(sleepScorePath, sleepJsonDir, co2Path, roomTempPath, spo2Dir, hrvDir, tempDir, outputPath, coverageCutoff, timezoneId);
     return 0;
 });
 
@@ -136,6 +147,7 @@ static void RunPipeline(
     string sleepScorePath,
     string sleepJsonDir,
     string co2Path,
+    string roomTempPath,
     string spo2Dir,
     string hrvDir,
     string tempDir,
@@ -149,6 +161,8 @@ static void RunPipeline(
     Console.WriteLine($"Sleep Score CSV : {sleepScorePath}");
     Console.WriteLine($"Sleep JSON Dir  : {sleepJsonDir}");
     Console.WriteLine($"CO2 CSV         : {co2Path}");
+    if (!string.IsNullOrEmpty(roomTempPath))
+        Console.WriteLine($"Room Temp CSV   : {roomTempPath}");
     Console.WriteLine($"SpO2 Dir        : {spo2Dir}");
     Console.WriteLine($"HRV Dir         : {hrvDir}");
     Console.WriteLine($"Temperature Dir : {tempDir}");

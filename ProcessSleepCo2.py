@@ -254,6 +254,12 @@ def print_analysis_summary(rows):
     print(f"Dataset Overview ({len(rows)} Qualifying Nights):")
     print(f"  Average Nightly CO2 : {avg_co2_mean:.1f} ppm (Min: {min(avg_co2_list):.1f}, Max: {max(avg_co2_list):.1f})")
     print(f"  Peak Nightly CO2    : {max_co2_mean:.1f} ppm (Min: {min(max_co2_list):.1f}, Max: {max(max_co2_list):.1f})")
+
+    has_room_temp = any(r.get("AvgRoomTempF") is not None for r in rows)
+    if has_room_temp:
+        temps = [r["AvgRoomTempF"] for r in rows if r.get("AvgRoomTempF") is not None]
+        print(f"  Bedroom Temperature : {sum(temps)/len(temps):.1f}°F (Min: {min(temps):.1f}°F, Max: {max(temps):.1f}°F)")
+
     print(f"  Overall Sleep Score : {scores_mean:.1f} (Min: {min(scores):.0f}, Max: {max(scores):.0f})")
 
     vent_count = sum(1 for r in rows if r["RoomVentilationState"] == "Ventilated")
@@ -261,28 +267,34 @@ def print_analysis_summary(rows):
     mod_count = len(rows) - vent_count - sealed_count
     print(f"  Room Dynamics       : {vent_count} Ventilated (<750 ppm), {mod_count} Moderate, {sealed_count} Sealed (>1000 ppm)\n")
 
-    sep_line = "-" * 141
+    sep_width = 158 if has_room_temp else 141
+    sep_line = "-" * sep_width
     print(sep_line)
-    print("| Biometric / Sleep Metric       | vs Avg CO2 (r) | vs Max CO2 (r) | vs Hrs>1k (r) | vs %>1k (r) | vs Sleep Score (r) | N Valid |  Metric Mean |")
+    if has_room_temp:
+        print("| Biometric / Sleep Metric       | vs Avg CO2 (r) | vs Max CO2 (r) | vs Hrs>1k (r) | vs Room Temp (r) | vs Sleep Score (r) | N Valid |  Metric Mean |")
+    else:
+        print("| Biometric / Sleep Metric       | vs Avg CO2 (r) | vs Max CO2 (r) | vs Hrs>1k (r) | vs %>1k (r) | vs Sleep Score (r) | N Valid |  Metric Mean |")
     print(sep_line)
 
-    print_stat_row("Overall Sleep Score", rows, lambda r: r["OverallScore"])
-    print_stat_row("HRV Recovery (RMSSD ms)", rows, lambda r: r["HrvRmssd"])
-    print_stat_row("NREM Heart Rate (BPM)", rows, lambda r: r["HrvNremHeartRate"])
-    print_stat_row("Resting Heart Rate (BPM)", rows, lambda r: r["RestingHeartRate"])
-    print_stat_row("Nightly Skin Temp (°C)", rows, lambda r: r["NightlySkinTempCelsius"])
-    print_stat_row("SpO2 Average (%)", rows, lambda r: r["SpO2Avg"])
-    print_stat_row("SpO2 Min Drop (%)", rows, lambda r: r["SpO2Min"])
-    print_stat_row("Deep Sleep (Minutes)", rows, lambda r: r["DeepSleepMinutes"])
-    print_stat_row("REM Sleep (Minutes)", rows, lambda r: r["RemSleepMinutes"])
-    print_stat_row("Restlessness Score", rows, lambda r: r["Restlessness"])
-    print_stat_row("Sleep Efficiency (%)", rows, lambda r: float(r["SleepEfficiency"]) if r["SleepEfficiency"] is not None else None)
-    print_stat_row("Total Sleep Duration (Hours)", rows, lambda r: r["SleepDurationHours"])
-    print_stat_row("CO2 Rise Rate (ppm/hr)", rows, lambda r: r["Co2RiseRatePerHour"])
+    print_stat_row("Overall Sleep Score", rows, lambda r: r["OverallScore"], has_room_temp)
+    print_stat_row("HRV Recovery (RMSSD ms)", rows, lambda r: r["HrvRmssd"], has_room_temp)
+    print_stat_row("NREM Heart Rate (BPM)", rows, lambda r: r["HrvNremHeartRate"], has_room_temp)
+    print_stat_row("Resting Heart Rate (BPM)", rows, lambda r: r["RestingHeartRate"], has_room_temp)
+    print_stat_row("Nightly Skin Temp (°C)", rows, lambda r: r["NightlySkinTempCelsius"], has_room_temp)
+    print_stat_row("SpO2 Average (%)", rows, lambda r: r["SpO2Avg"], has_room_temp)
+    print_stat_row("SpO2 Min Drop (%)", rows, lambda r: r["SpO2Min"], has_room_temp)
+    print_stat_row("Deep Sleep (Minutes)", rows, lambda r: r["DeepSleepMinutes"], has_room_temp)
+    print_stat_row("REM Sleep (Minutes)", rows, lambda r: r["RemSleepMinutes"], has_room_temp)
+    print_stat_row("Restlessness Score", rows, lambda r: r["Restlessness"], has_room_temp)
+    print_stat_row("Sleep Efficiency (%)", rows, lambda r: float(r["SleepEfficiency"]) if r["SleepEfficiency"] is not None else None, has_room_temp)
+    print_stat_row("Total Sleep Duration (Hours)", rows, lambda r: r["SleepDurationHours"], has_room_temp)
+    print_stat_row("CO2 Rise Rate (ppm/hr)", rows, lambda r: r["Co2RiseRatePerHour"], has_room_temp)
+    if has_room_temp:
+        print_stat_row("Bedroom Temp (°F)", rows, lambda r: r.get("AvgRoomTempF"), has_room_temp)
     print(sep_line + "\n")
 
 
-def print_stat_row(name, rows, metric_selector):
+def print_stat_row(name, rows, metric_selector, has_room_temp: bool = False):
     valid = [r for r in rows if metric_selector(r) is not None]
     if len(valid) < 3:
         return
@@ -297,11 +309,20 @@ def print_stat_row(name, rows, metric_selector):
     r_co2_avg = pearson(xs, co2_avg)
     r_co2_max = pearson(xs, co2_max)
     r_hrs = pearson(xs, hrs_above)
-    r_pct = pearson(xs, pct_above)
     r_score = pearson(xs, scores)
     mean_val = sum(xs) / len(xs)
 
-    print(f"| {name:<30} | {r_co2_avg:14.4f} | {r_co2_max:14.4f} | {r_hrs:13.4f} | {r_pct:11.4f} | {r_score:18.4f} | {len(valid):7d} | {mean_val:12.2f} |")
+    if has_room_temp:
+        room_temps = [r["AvgRoomTempF"] for r in valid if r.get("AvgRoomTempF") is not None]
+        if len(room_temps) == len(valid):
+            r_rt = pearson(xs, room_temps)
+            rt_col = f"{r_rt:16.4f}"
+        else:
+            rt_col = f"{'N/A':>16}"
+        print(f"| {name:<30} | {r_co2_avg:14.4f} | {r_co2_max:14.4f} | {r_hrs:13.4f} | {rt_col} | {r_score:18.4f} | {len(valid):7d} | {mean_val:12.2f} |")
+    else:
+        r_pct = pearson(xs, pct_above)
+        print(f"| {name:<30} | {r_co2_avg:14.4f} | {r_co2_max:14.4f} | {r_hrs:13.4f} | {r_pct:11.4f} | {r_score:18.4f} | {len(valid):7d} | {mean_val:12.2f} |")
 
 
 # =========================================================================================
@@ -318,6 +339,7 @@ def run_pipeline(
     output_path: str,
     coverage_threshold: float,
     tz_id: str,
+    bedroom_temp_path: str = None,
     skip_regression: bool = False
 ):
     sleep_score_path = os.path.expanduser(sleep_score_path)
@@ -327,6 +349,7 @@ def run_pipeline(
     hrv_dir = os.path.expanduser(hrv_dir)
     temp_dir = os.path.expanduser(temp_dir)
     output_path = os.path.expanduser(output_path)
+    bedroom_temp_path = os.path.expanduser(bedroom_temp_path) if bedroom_temp_path else None
 
     print("====================================================================")
     print("     Sleep Score, Biometrics & CO2 Multi-Sensor Pre-processor")
@@ -334,6 +357,8 @@ def run_pipeline(
     print(f"Sleep Score CSV : {sleep_score_path}")
     print(f"Sleep JSON Dir  : {sleep_json_dir}")
     print(f"CO2 CSV         : {co2_path}")
+    if bedroom_temp_path:
+        print(f"Bedroom Temp CSV: {bedroom_temp_path}")
     print(f"SpO2 Dir        : {spo2_dir}")
     print(f"HRV Dir         : {hrv_dir}")
     print(f"Temperature Dir : {temp_dir}")
@@ -495,6 +520,28 @@ def run_pipeline(
     co2_timestamps = [c.timestamp for c in co2_readings]
     print(f"      Loaded {len(co2_readings)} CO2 readings from {co2_readings[0].timestamp.strftime('%Y-%m-%d')} to {co2_readings[-1].timestamp.strftime('%Y-%m-%d')} UTC.")
 
+    # 4b. Read Home Assistant Bedroom Temperature Data
+    room_temp_readings = []
+    room_temp_timestamps = []
+    if bedroom_temp_path and os.path.exists(bedroom_temp_path):
+        print(f"[4b] Reading Home Assistant Bedroom Temperature data from {bedroom_temp_path}...")
+        with open(bedroom_temp_path, mode="r", encoding="utf-8-sig", newline="") as reader:
+            csv_reader = csv.DictReader(reader)
+            for row in csv_reader:
+                ts_str = row.get("last_changed") or ""
+                val_str = row.get("state") or ""
+                val = try_parse_float(val_str)
+                if ts_str and val is not None:
+                    try:
+                        dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                        room_temp_readings.append(Co2Point(dt, val))
+                    except ValueError:
+                        pass
+        room_temp_readings.sort(key=lambda a: a.timestamp)
+        room_temp_timestamps = [c.timestamp for c in room_temp_readings]
+        if room_temp_readings:
+            print(f"      Loaded {len(room_temp_readings)} bedroom temperature readings from {room_temp_readings[0].timestamp.strftime('%Y-%m-%d')} to {room_temp_readings[-1].timestamp.strftime('%Y-%m-%d')} UTC.")
+
     # 5. Align Sleep Windows with CO2, Calculate Coverage and Time-Weighted CO2
     print(f"[5/6] Aligning sleep intervals, computing time-weighted CO2 & dynamics, and filtering by >= {int(coverage_threshold * 100)}% coverage...")
 
@@ -605,6 +652,45 @@ def run_pipeline(
         has_temp = s.date_of_sleep in temp_map
         temp_val = temp_map.get(s.date_of_sleep)
 
+        # Bedroom temperature integration during sleep
+        avg_room_temp, min_room_temp, max_room_temp, delta_room_temp = None, None, None, None
+        if room_temp_readings:
+            first_t_idx = bisect.bisect_left(room_temp_timestamps, s.start_utc - timedelta(hours=2))
+            t_window = []
+            for i in range(max(0, first_t_idx), len(room_temp_readings)):
+                pt = room_temp_readings[i]
+                if pt.timestamp > s.end_utc + timedelta(hours=2):
+                    break
+                t_window.append(pt)
+
+            t_in_sleep = [p for p in t_window if s.start_utc <= p.timestamp <= s.end_utc]
+            if t_in_sleep:
+                start_t = interpolate_co2(t_window, s.start_utc)
+                end_t = interpolate_co2(t_window, s.end_utc)
+                t_profile = [(s.start_utc, start_t)]
+                for pt in t_in_sleep:
+                    if s.start_utc < pt.timestamp < s.end_utc:
+                        t_profile.append((pt.timestamp, pt.ppm))
+                t_profile.append((s.end_utc, end_t))
+
+                total_t_sec = 0.0
+                int_t_sec = 0.0
+                for i in range(len(t_profile) - 1):
+                    t1, v1 = t_profile[i]
+                    t2, v2 = t_profile[i + 1]
+                    dt = (t2 - t1).total_seconds()
+                    if dt > 0 and dt <= max_continuous_gap.total_seconds():
+                        total_t_sec += 0.5 * (v1 + v2) * dt
+                        int_t_sec += dt
+
+                avg_room_temp = (total_t_sec / int_t_sec) if int_t_sec > 0 else (sum(p.ppm for p in t_in_sleep) / len(t_in_sleep))
+                min_room_temp = min(p.ppm for p in t_in_sleep)
+                max_room_temp = max(p.ppm for p in t_in_sleep)
+                delta_room_temp = max_room_temp - min_room_temp
+            elif 0 <= first_t_idx < len(room_temp_readings):
+                val = room_temp_readings[first_t_idx].ppm
+                avg_room_temp, min_room_temp, max_room_temp, delta_room_temp = val, val, val, 0.0
+
         qualifying_records.append({
             "DateOfSleep": s.date_of_sleep,
             "DayOfWeek": s.start_local.strftime("%A"),
@@ -632,6 +718,10 @@ def run_pipeline(
             "HrvNremHeartRate": hrv_val[1] if has_hrv else None,
             "HrvEntropy": hrv_val[2] if has_hrv else None,
             "NightlySkinTempCelsius": temp_val if has_temp else None,
+            "AvgRoomTempF": round_half_even(avg_room_temp, 1) if avg_room_temp is not None else None,
+            "MinRoomTempF": round_half_even(min_room_temp, 1) if min_room_temp is not None else None,
+            "MaxRoomTempF": round_half_even(max_room_temp, 1) if max_room_temp is not None else None,
+            "RoomTempDeltaF": round_half_even(delta_room_temp, 1) if delta_room_temp is not None else None,
             "Co2StartPpm": round_half_even(start_co2, 1),
             "AvgCo2Ppm": round_half_even(avg_co2, 1),
             "MaxCo2Ppm": round_half_even(max_co2, 1),
@@ -661,7 +751,8 @@ def run_pipeline(
         "RevitalizationScore", "DurationScore", "DeepSleepMinutes", "RemSleepMinutes",
         "LightSleepMinutes", "WakeSleepMinutes", "RestingHeartRate", "Restlessness",
         "SpO2Avg", "SpO2Min", "HrvRmssd", "HrvNremHeartRate", "HrvEntropy",
-        "NightlySkinTempCelsius", "Co2StartPpm", "AvgCo2Ppm", "MaxCo2Ppm",
+        "NightlySkinTempCelsius", "AvgRoomTempF", "MinRoomTempF", "MaxRoomTempF",
+        "RoomTempDeltaF", "Co2StartPpm", "AvgCo2Ppm", "MaxCo2Ppm",
         "HoursAbove1000Ppm", "PctSleepAbove1000Ppm", "Co2RisePpm",
         "Co2RiseRatePerHour", "RoomVentilationState", "Co2CoveragePct",
         "Co2SampleCount"
@@ -706,9 +797,12 @@ def run_pipeline(
                 print("\n" + "=" * 141)
                 print("                     MULTIPLE REGRESSION ANALYSIS (ADJUSTING FOR ERRATIC SLEEP TIME AS COVARIATE)")
                 print("=" * 141)
+                reg_metrics = ["AvgCo2Ppm", "MaxCo2Ppm"]
+                if any(r.get("AvgRoomTempF") is not None for r in qualifying_records):
+                    reg_metrics.append("AvgRoomTempF")
                 analyze_sleep_co2_regression(
                     qualifying_records,
-                    co2_metrics=["AvgCo2Ppm", "MaxCo2Ppm"],
+                    co2_metrics=reg_metrics,
                     covariates=["duration"],
                     verbose=True
                 )
@@ -733,9 +827,14 @@ def get_default_co2_path() -> str:
     return os.path.join(os.path.expanduser("~"), "Downloads", "CO2.csv")
 
 
+def get_default_bedroom_temp_path() -> str:
+    return os.path.join(os.path.expanduser("~"), "Downloads", "bedroom_temp.csv")
+
+
 def main():
     takeout_default = get_default_takeout_dir()
     co2_default = get_default_co2_path()
+    bedroom_temp_default = get_default_bedroom_temp_path()
 
     parser = argparse.ArgumentParser(
         description="Align and analyze Fitbit/Google Health sleep scores and biometrics with Home Assistant CO2 sensor data."
@@ -757,6 +856,12 @@ def main():
         dest="co2",
         default=co2_default,
         help="Path to Home Assistant CO2.csv"
+    )
+    parser.add_argument(
+        "-bt", "--bedroom-temp",
+        dest="bedroom_temp",
+        default=bedroom_temp_default,
+        help="Path to Home Assistant bedroom_temp.csv"
     )
     parser.add_argument(
         "-spo2", "--spo2-dir",
@@ -814,6 +919,7 @@ def main():
         output_path=args.output,
         coverage_threshold=args.coverage,
         tz_id=args.timezone,
+        bedroom_temp_path=args.bedroom_temp,
         skip_regression=args.skip_regression
     )
     return 0
